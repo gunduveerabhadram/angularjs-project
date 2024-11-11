@@ -1,8 +1,3 @@
-# Node.js
-# Build a general Node.js project with npm.
-# Add steps that analyze code, save build artifacts, deploy, and more:
-# https://docs.microsoft.com/azure/devops/pipelines/languages/javascript
-
 trigger:
 - none
 
@@ -11,58 +6,42 @@ pool:
 
 stages:
 - stage: Build
-  displayName: Build Stage
+  displayName: "Infra and Artifact Build Stage"
   jobs:
-    - job: Build
-      pool:
-        vmImage: 'ubuntu-latest'
+    - job: ArtifactBuild
       steps:
-        - task: NodeTool@0
-          inputs:
-           versionSpec: '20.x'
-          displayName: 'Install Node.js 20.x'
-
-        - script: |
-            cd $(Build.SourcesDirectory)
-            npm install -g @angular/cli
-            npm install
-            ng build
-          displayName: 'npm install and build'
-          workingDirectory: '$(Build.SourcesDirectory)'
-
-        - task: ArchiveFiles@2
-          displayName: 'Archive files'
-          inputs:
-            rootFolderOrFile: '$(System.DefaultWorkingDirectory)/dist/angular-nextops/'
-            includeRootFolder: false
-            archiveType: zip
-            archiveFile: $(Build.ArtifactStagingDirectory)/spaweb.zip
-            replaceExistingArchive: true
-
-        - task: PublishBuildArtifacts@1
-          inputs:
-            PathtoPublish: '$(Build.ArtifactStagingDirectory)/spaweb.zip'
-            ArtifactName: 'drop'
-            publishLocation: 'Container'
-
-- stage: Deployment
-  displayName: 'Deploy to Dev'
-  dependsOn: Build
-  condition: succeeded()
-  jobs:
-    - deployment: DevDeployment
-      pool:
-        vmImage: 'ubuntu-latest'
-      environment: 'Dev'
-      strategy:
-        runOnce:
-          deploy:
-           steps:
-            - task: AzureWebApp@1
-              inputs:
-                azureSubscription: 'Pay-As-You-Go(a355c32e-4a22-4b05-aab4-be236850fa6e)'
-                appType: 'webAppLinux'
-                appName: 'nextopsajst19'
-                package: '$(Agent.BuildDirectory)/drop/spaweb.zip'
-                runtimeStack: 'NODE|18-lts'
-                startUpCommand: 'pm2 serve /home/site/wwwroot/browser --no-daemon --spa'
+      - task: NodeTool@0
+        inputs:
+          versionSource: 'spec'
+          versionSpec: '20.x'
+      
+      - script: |
+          cd $(build.sourcesdirectory)
+          npm install -g @angular/cli
+          npm install
+          ng build
+        displayName: "npm install and build"
+        workingDirectory: '$(build.sourcesdirectory)'
+      
+      - task: TerraformInstaller@0
+        inputs:
+          terraformVersion: 'latest'
+      
+      - task: TerraformTaskV2@2
+        inputs:
+          provider: 'azurerm'
+          command: 'init'
+          workingDirectory: '$(build.sourcesdirectory)/env'
+          backendServiceArm: 'Pay-As-You-Go(1)(a355c32e-4a22-4b05-aab4-be236850fa6e)'
+          backendAzureRmResourceGroupName: 'NextOps'
+          backendAzureRmStorageAccountName: 'nextopstfsat19'
+          backendAzureRmContainerName: 'tfstate'
+          backendAzureRmKey: 'DEV/dev.tfstate'
+      
+      - task: TerraformTaskV2@2
+        inputs:
+          provider: 'azurerm'
+          command: 'apply'
+          workingDirectory: 'env'
+          commandOptions: '--auto-approve'
+          environmentServiceNameAzureRM: 'Pay-As-You-Go(1)(a355c32e-4a22-4b05-aab4-be236850fa6e)'
